@@ -1,4 +1,5 @@
 extern crate colored;
+extern crate nix;
 
 mod execute;
 mod lexer;
@@ -36,7 +37,9 @@ fn main_loop() {
         let parse_result = parser::make_parse_tree_from_str(input_str);
         match parse_result {
             Ok(root) => match execute::execute(root) {
-                Ok(_) => {}
+                Ok(status) => {
+                    // println!("status: {}", status);
+                }
                 Err(err) => {
                     if let ExecutionError::Exit = err {
                         println!("exit");
