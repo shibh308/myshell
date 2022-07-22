@@ -24,6 +24,8 @@ pub enum ExecutionError {
     NotFoundError(String),
     #[error("error caused in \"{0}\"")]
     ExecError(String),
+    #[error("interrupted")]
+    InterruptError,
     #[error("fork error ({0})")]
     ForkError(String),
     #[error("command is empty")]
@@ -39,6 +41,9 @@ fn exec_and_fork(command: Command) -> Result<i32, ExecutionError> {
         Ok(ForkResult::Parent { child }) => {
             match nix::sys::wait::waitpid(child, Some(WaitPidFlag::WCONTINUED)) {
                 Ok(WaitStatus::Exited(_, status)) => Ok(status),
+                Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGINT, _)) => {
+                    Err(ExecutionError::InterruptError)
+                }
                 _ => {
                     let command_str = command.str.iter().fold("".to_string(), |x, y| x + " " + y);
                     Err(ExecutionError::ExecError(command_str))

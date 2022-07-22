@@ -8,13 +8,30 @@ mod utils;
 
 use colored::Colorize;
 use execute::ExecutionError;
+use nix::errno::Errno;
+use nix::sys::signal::SigHandler;
 use parser::Pipe;
 use std::io::{stdin, stdout, Error, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
 fn main() {
+    set_signal_handler();
     main_loop();
+}
+
+extern "C" fn sigint_handler_fn(c: i32) {}
+
+fn set_signal_handler() {
+    use nix::sys::signal;
+    unsafe {
+        if let Err(_) = signal::signal(
+            signal::Signal::SIGINT,
+            signal::SigHandler::Handler(sigint_handler_fn),
+        ) {
+            println!("SIGINT handler set failed");
+        }
+    }
 }
 
 fn main_loop() {

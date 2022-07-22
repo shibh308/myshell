@@ -23,6 +23,9 @@ impl Display for ErrorEnum {
             ErrorEnum::ExecutionError(ExecutionError::CdError(err)) => {
                 write!(f, "cd: {}", err.clone())
             }
+            ErrorEnum::ExecutionError(ExecutionError::InterruptError) => {
+                write!(f, "interrupted")
+            }
             ErrorEnum::ExecutionError(err) => {
                 write!(f, "ExecutionError: {}", err.clone())
             }
