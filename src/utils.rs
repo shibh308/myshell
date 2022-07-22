@@ -1,3 +1,4 @@
+use crate::execute::{CdError, ExecutionError};
 use crate::lexer::LexError;
 use crate::parser::ParseError;
 use std::fmt::{Debug, Display, Formatter};
@@ -7,6 +8,7 @@ use thiserror::Error;
 pub enum ErrorEnum {
     ParseError(ParseError),
     LexError(LexError),
+    ExecutionError(ExecutionError),
 }
 
 impl Display for ErrorEnum {
@@ -17,6 +19,12 @@ impl Display for ErrorEnum {
             }
             ErrorEnum::LexError(err) => {
                 write!(f, "LexError: {}", err.clone())
+            }
+            ErrorEnum::ExecutionError(ExecutionError::CdError(err)) => {
+                write!(f, "cd: {}", err.clone())
+            }
+            ErrorEnum::ExecutionError(err) => {
+                write!(f, "ExecutionError: {}", err.clone())
             }
         }
     }

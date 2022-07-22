@@ -26,27 +26,27 @@ pub enum ParseError {
 }
 
 #[derive(Clone, Debug)]
-struct Command {
-    str: Vec<String>,
+pub struct Command {
+    pub str: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
-struct Redirect {
-    from: Option<String>,
-    to: Option<String>,
-    command: Command,
+pub struct Redirect {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub command: Command,
 }
 
 #[derive(Clone, Debug)]
-struct Commands {
-    redirect: Redirect,
-    tail: Option<(lexer::Operator, Box<Commands>)>,
+pub struct Commands {
+    pub redirect: Redirect,
+    pub tail: Option<(lexer::Operator, Box<Commands>)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Pipe {
-    commands: Commands,
-    tail: Option<Box<Pipe>>,
+    pub commands: Commands,
+    pub tail: Option<Box<Pipe>>,
 }
 
 pub fn make_parse_tree_from_str(s: &str) -> Result<Pipe, ErrorEnum> {
