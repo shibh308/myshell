@@ -9,6 +9,7 @@ pub enum Operator {
     Pipe,
     Less,
     LessLess,
+    ErrorRedirect,
     Greater,
     GreaterGreater,
     SemiColon,
@@ -25,6 +26,7 @@ impl Operator {
             Operator::LessLess => "<<",
             Operator::Greater => ">",
             Operator::GreaterGreater => ">>",
+            Operator::ErrorRedirect => "2>",
             Operator::SemiColon => ";",
         }
     }
@@ -66,7 +68,14 @@ pub fn lex(s: &str) -> Result<Vec<Token>, LexError> {
     let is_spl = |x: char| SPECIAL_CHARS.contains(&x) || x.is_whitespace();
 
     while i < n {
-        if is_spl(s[i]) {
+        if i + 1 < n && s[i] == '2' && s[i + 1] == '>' {
+            if st != i {
+                tokens.push(Token::String(s[st..i].iter().collect::<String>()));
+            }
+            tokens.push(Token::Operator(Operator::ErrorRedirect));
+            i += 2;
+            st = i;
+        } else if is_spl(s[i]) {
             if st != i {
                 tokens.push(Token::String(s[st..i].iter().collect::<String>()));
             }

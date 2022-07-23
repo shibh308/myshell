@@ -7,7 +7,7 @@ use thiserror::Error;
    <statement> ::= <commands> [ ; <statement> ]?
    <commands>  ::= <commands2> [ & ]? | <epsilon>
    <commands2> ::= <command> [ <operator> <commands2> ]?
-   <pipe>      ::= <command> [ < <str> ]? [ <pipe2> ]? [ > <str> ]?
+   <pipe>      ::= <command> [ < <str> ]? [ <pipe2> ]? [[ > <str> ] | [ 2> <str> ]]+
    <pipe2>     ::= <command> [ | <pipe2> ]?
    <command>   ::= [ <str> ]+
    <operator>  ::= "&&" | "||"
@@ -23,6 +23,8 @@ pub enum ParseError {
     CommandIsEmpty(usize),
     #[error("token is invalid (at token {0})")]
     InvalidToken(usize),
+    #[error("redirected multi time (at token {0})")]
+    MultiRedirect(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +59,7 @@ pub struct PipeBlock {
     pub tail: Option<Pipe>,
     pub from: Option<String>,
     pub to: Option<String>,
+    pub to_err: Option<String>,
 }
 
 impl PipeBlock {
@@ -157,10 +160,41 @@ fn parse_pipe(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Pipe, ParseEr
     })
 }
 
+fn parse_redirection(
+    tokens: &Vec<lexer::Token>,
+    l: &mut usize,
+    to: &mut Option<String>,
+    to_err: &mut Option<String>,
+) -> Option<ParseError> {
+    for _ in 0..2 {
+        if *l + 1 < tokens.len() {
+            if let Token::Operator(Operator::Greater) = &tokens[*l] {
+                if let Token::String(s) = &tokens[*l + 1] {
+                    if to.is_some() {
+                        return Some(ParseError::MultiRedirect(*l));
+                    }
+                    *to = Some(s.clone());
+                    *l += 2;
+                }
+            } else if let Token::Operator(Operator::ErrorRedirect) = &tokens[*l] {
+                if let Token::String(s) = &tokens[*l + 1] {
+                    if to_err.is_some() {
+                        return Some(ParseError::MultiRedirect(*l));
+                    }
+                    *to_err = Some(s.clone());
+                    *l += 2;
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlock, ParseError> {
     let command = parse_command(tokens, l)?;
     let mut from = None;
     let mut to = None;
+    let mut to_err = None;
     if *l + 1 < tokens.len() {
         if let Token::Operator(Operator::Less) = &tokens[*l] {
             if let Token::String(s) = &tokens[*l + 1] {
@@ -169,19 +203,17 @@ fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlo
             }
         }
     }
-    if *l + 1 < tokens.len() {
-        if let Token::Operator(Operator::Greater) = &tokens[*l] {
-            if let Token::String(s) = &tokens[*l + 1] {
-                to = Some(s.clone());
-                *l += 2;
-                return Ok(PipeBlock {
-                    command,
-                    tail: None,
-                    from,
-                    to,
-                });
-            }
-        }
+    if let Some(err) = parse_redirection(tokens, l, &mut to, &mut to_err) {
+        return Err(err);
+    }
+    if to.is_some() || to_err.is_some() {
+        return Ok(PipeBlock {
+            command,
+            tail: None,
+            from,
+            to,
+            to_err,
+        });
     }
     if *l == tokens.len() {
         return Ok(PipeBlock {
@@ -189,24 +221,21 @@ fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlo
             tail: None,
             from,
             to,
+            to_err,
         });
     }
     if let Token::Operator(Operator::Pipe) = tokens[*l] {
         *l += 1;
         let pipe = parse_pipe(tokens, l)?;
-        if *l + 1 < tokens.len() {
-            if let Token::Operator(Operator::Greater) = &tokens[*l] {
-                if let Token::String(s) = &tokens[*l + 1] {
-                    to = Some(s.clone());
-                    *l += 2;
-                }
-            }
+        if let Some(err) = parse_redirection(tokens, l, &mut to, &mut to_err) {
+            return Err(err);
         }
         Ok(PipeBlock {
             command,
             tail: Some(pipe),
             from,
             to,
+            to_err,
         })
     } else {
         Ok(PipeBlock {
@@ -214,6 +243,7 @@ fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlo
             tail: None,
             from,
             to,
+            to_err,
         })
     }
 }

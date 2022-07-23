@@ -117,6 +117,7 @@ fn exec_command(
     command: Command,
     input_fd: i32,
     output_fd: i32,
+    err_fd: i32,
     is_tail: bool,
 ) -> Result<Option<i32>, ExecutionError> {
     if command.str[0] == "exit" {
@@ -150,6 +151,11 @@ fn exec_command(
                         return Err(ExecutionError::CloseError(err.to_string()));
                     }
                 }
+                if err_fd != 2 {
+                    if let Err(err) = close(err_fd) {
+                        return Err(ExecutionError::CloseError(err.to_string()));
+                    }
+                }
                 Ok(None)
             }
         }
@@ -160,11 +166,17 @@ fn exec_command(
             if output_fd != 1 {
                 dup2(output_fd, 1).unwrap();
             }
+            if err_fd != 2 {
+                dup2(err_fd, 2).unwrap();
+            }
             if input_fd != 0 {
                 close(input_fd).unwrap();
             }
             if output_fd != 1 {
                 close(output_fd).unwrap();
+            }
+            if err_fd != 2 {
+                close(err_fd).unwrap();
             }
             match exec_command_internal(command) {
                 Ok(status) => {
@@ -217,6 +229,27 @@ fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
             }
         }
     }
+    let mut err_fd = 2;
+    if let Some(path) = pipe_block.to_err {
+        let cstr = CString::new(path.clone()).unwrap();
+        let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(cstr.to_bytes_with_nul()) };
+        use nix::sys::stat::Mode;
+        match nix::fcntl::open(
+            cstr,
+            nix::fcntl::OFlag::O_WRONLY | nix::fcntl::OFlag::O_CREAT,
+            Mode::S_IRUSR
+                | Mode::S_IWUSR
+                | Mode::S_IRGRP
+                | Mode::S_IWGRP
+                | Mode::S_IROTH
+                | Mode::S_IWOTH,
+        ) {
+            Ok(fd) => err_fd = fd,
+            Err(err) => {
+                return Err(ExecutionError::OutputRedirectError(err.to_string()));
+            }
+        }
+    }
 
     let mut command_vec = Vec::new();
 
@@ -248,7 +281,13 @@ fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
 
     let mut res = None;
     for (i, (command, input_fd, output_fd)) in command_vec.iter().cloned().enumerate() {
-        res = exec_command(command, input_fd, output_fd, i + 1 == command_vec.len())?;
+        res = exec_command(
+            command,
+            input_fd,
+            output_fd,
+            err_fd,
+            i + 1 == command_vec.len(),
+        )?;
     }
     Ok(res.unwrap())
 }
