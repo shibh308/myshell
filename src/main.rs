@@ -40,7 +40,6 @@ fn main_loop() {
             Ok(path) => path.display().to_string(),
             Err(_) => "???".to_string(),
         };
-        let uname = (&whoami::username()).red();
         print!(
             "{}@{}:{}: ",
             (&whoami::username()).cyan(),
@@ -66,7 +65,7 @@ fn main_loop() {
                 }
             },
             Err(err) => {
-                println!("myshell {}", err);
+                println!("myshell: {}", err);
             }
         }
     }
