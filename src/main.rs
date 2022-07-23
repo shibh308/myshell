@@ -59,7 +59,7 @@ fn main_loop() {
         let input_str = input_str.trim_end();
         let parse_result = parser::make_parse_tree_from_str(input_str);
         match parse_result {
-            Ok(root) => match execute::execute(root) {
+            Ok(commands) => match execute::execute(commands) {
                 Ok(status) => {
                     // println!("status: {}", status);
                 }

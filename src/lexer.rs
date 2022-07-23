@@ -10,6 +10,7 @@ pub enum Operator {
     LessLess,
     Greater,
     GreaterGreater,
+    SemiColon,
 }
 
 impl Operator {
@@ -22,6 +23,7 @@ impl Operator {
             Operator::LessLess => "<<",
             Operator::Greater => ">",
             Operator::GreaterGreater => ">>",
+            Operator::SemiColon => ";",
         }
     }
 }
@@ -58,7 +60,8 @@ pub fn lex(s: &str) -> Result<Vec<Token>, LexError> {
     let mut i = 0;
     let mut st = 0;
 
-    let is_spl = |x: char| x == '&' || x == '|' || x == '<' || x == '>' || x.is_whitespace();
+    const SPECIAL_CHARS: [char; 5] = ['&', '|', '<', '>', ';'];
+    let is_spl = |x: char| SPECIAL_CHARS.contains(&x) || x.is_whitespace();
 
     while i < n {
         if is_spl(s[i]) {
@@ -74,7 +77,7 @@ pub fn lex(s: &str) -> Result<Vec<Token>, LexError> {
                 }
             } else if s[i] == '|' {
                 if i + 1 < n && s[i + 1] == '|' {
-                    tokens.push(Token::Operator(Operator::AndAnd));
+                    tokens.push(Token::Operator(Operator::OrOr));
                     i += 2;
                 } else {
                     tokens.push(Token::Operator(Operator::Pipe));
@@ -96,6 +99,9 @@ pub fn lex(s: &str) -> Result<Vec<Token>, LexError> {
                     tokens.push(Token::Operator(Operator::Greater));
                     i += 1;
                 }
+            } else if s[i] == ';' {
+                tokens.push(Token::Operator(Operator::SemiColon));
+                i += 1;
             } else {
                 // whitespace
                 i += 1;

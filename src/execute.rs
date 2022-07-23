@@ -20,6 +20,8 @@ pub enum CdError {
 
 #[derive(Clone, Error, Debug)]
 pub enum ExecutionError {
+    #[error("invalid operator \"{0}\"")]
+    InvalidOperator(String),
     #[error("failed to open a input file: {0}")]
     InputRedirectError(String),
     #[error("failed to open a output file: {0}")]
@@ -88,45 +90,42 @@ fn exec_and_fork(command: Command) -> Result<i32, ExecutionError> {
     }
 }
 
-fn exec_command(command: Command) -> Result<i32, ExecutionError> {
+fn exec_cd(command: Command) -> Result<i32, ExecutionError> {
+    if command.str.len() == 1 {
+        Err(ExecutionError::CdError(CdError::MissingArgugment))
+    } else if command.str.len() > 2 {
+        Err(ExecutionError::CdError(CdError::TooManyArgument(
+            command.str.len() - 1,
+        )))
+    } else {
+        match env::set_current_dir(&command.str[1]) {
+            Ok(_) => Ok(0),
+            Err(err) => Err(ExecutionError::CdError(CdError::ExecError(err.to_string()))),
+        }
+    }
+}
+
+fn exec_command_internal(command: Command) -> Result<i32, ExecutionError> {
     assert!(!command.str.is_empty());
     if command.str[0] == "cd" {
-        if command.str.len() == 1 {
-            Err(ExecutionError::CdError(CdError::MissingArgugment))
-        } else if command.str.len() > 2 {
-            Err(ExecutionError::CdError(CdError::TooManyArgument(
-                command.str.len() - 1,
-            )))
-        } else {
-            match env::set_current_dir(&command.str[1]) {
-                Ok(_) => Ok(0),
-                Err(err) => Err(ExecutionError::CdError(CdError::ExecError(err.to_string()))),
-            }
-        }
-    } else if command.str[0] == "exit" {
-        Err(ExecutionError::Exit)
+        exec_cd(command)
     } else {
         exec_and_fork(command)
     }
 }
 
-fn exec_commands_internal(commands: Commands) -> Result<i32, ExecutionError> {
-    let head_result = exec_command(commands.command);
-    match commands.tail {
-        None => head_result,
-        Some((op, tail)) => {
-            // TODO: use operator and tail
-            head_result
-        }
-    }
-}
-
-fn exec_commands(
-    commands: Commands,
+fn exec_command(
+    command: Command,
     input_fd: i32,
     output_fd: i32,
     is_tail: bool,
 ) -> Result<Option<i32>, ExecutionError> {
+    if command.str[0] == "exit" {
+        return Err(ExecutionError::Exit);
+    }
+    if is_tail && command.str[0] == "cd" {
+        return Ok(Some(exec_cd(command)?));
+    }
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
             if is_tail {
@@ -138,11 +137,8 @@ fn exec_commands(
                     Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGQUIT, _)) => {
                         Err(ExecutionError::QuitError)
                     }
-                    Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGTERM, _)) => {
-                        Err(ExecutionError::Exit)
-                    }
                     Err(err) => Err(ExecutionError::ExecError(err.to_string())),
-                    _ => Err(ExecutionError::ExecOtherError(commands.to_string())),
+                    _ => Err(ExecutionError::ExecOtherError(command.to_string())),
                 }
             } else {
                 if input_fd != 0 {
@@ -171,13 +167,9 @@ fn exec_commands(
             if output_fd != 1 {
                 close(output_fd).unwrap();
             }
-            match exec_commands_internal(commands) {
+            match exec_command_internal(command) {
                 Ok(status) => {
                     std::process::exit(status);
-                }
-                Err(ExecutionError::Exit) => {
-                    nix::sys::signal::raise(nix::sys::signal::Signal::SIGTERM).unwrap();
-                    std::process::exit(-1);
                 }
                 Err(err) => {
                     println!("{}", ErrorEnum::ExecutionError(err));
@@ -189,9 +181,9 @@ fn exec_commands(
     }
 }
 
-pub fn execute(root: Root) -> Result<i32, ExecutionError> {
+fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
     let mut input_fd = 0;
-    if let Some(path) = root.from {
+    if let Some(path) = pipe_block.from {
         let cstr = CString::new(path.clone()).unwrap();
         let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(cstr.to_bytes_with_nul()) };
         match nix::fcntl::open(
@@ -206,7 +198,7 @@ pub fn execute(root: Root) -> Result<i32, ExecutionError> {
         }
     }
     let mut output_fd = 1;
-    if let Some(path) = root.to {
+    if let Some(path) = pipe_block.to {
         let cstr = CString::new(path.clone()).unwrap();
         let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(cstr.to_bytes_with_nul()) };
         match nix::fcntl::open(
@@ -221,20 +213,20 @@ pub fn execute(root: Root) -> Result<i32, ExecutionError> {
         }
     }
 
-    let mut commands_vec = Vec::new();
+    let mut command_vec = Vec::new();
 
     let mut now_out_fd = output_fd;
     let mut nex_in_fd = 0;
-    (now_out_fd, nex_in_fd) = match root.tail {
+    (now_out_fd, nex_in_fd) = match pipe_block.tail {
         None => Ok((output_fd, 0)),
         Some(_) => match pipe() {
             Ok((read_pipe, write_pipe)) => Ok((write_pipe, read_pipe)),
             Err(err) => Err(ExecutionError::PipeError(err.to_string())),
         },
     }?;
-    commands_vec.push((root.commands, input_fd, now_out_fd));
+    command_vec.push((pipe_block.command, input_fd, now_out_fd));
 
-    let mut tail = root.tail;
+    let mut tail = pipe_block.tail;
     while tail.is_some() {
         let mut pipe_node = tail.unwrap();
         let now_in_fd = nex_in_fd;
@@ -245,13 +237,39 @@ pub fn execute(root: Root) -> Result<i32, ExecutionError> {
                 Err(err) => Err(ExecutionError::PipeError(err.to_string())),
             },
         }?;
-        commands_vec.push((pipe_node.commands, now_in_fd, now_out_fd));
+        command_vec.push((pipe_node.command, now_in_fd, now_out_fd));
         tail = pipe_node.tail.map(|x| *x);
     }
 
     let mut res = None;
-    for (i, (commands, input_fd, output_fd)) in commands_vec.iter().cloned().enumerate() {
-        res = exec_commands(commands, input_fd, output_fd, i + 1 == commands_vec.len())?;
+    for (i, (command, input_fd, output_fd)) in command_vec.iter().cloned().enumerate() {
+        res = exec_command(command, input_fd, output_fd, i + 1 == command_vec.len())?;
     }
     Ok(res.unwrap())
+}
+
+pub fn execute(commands: Commands) -> Result<i32, ExecutionError> {
+    let head_result = execute_pipe_block(commands.head);
+    let success = head_result.clone().map_or(false, |x| x == 0);
+    match commands.tail {
+        None => head_result,
+        Some((op, tail)) => match op {
+            Operator::AndAnd => {
+                if success {
+                    execute(*tail)
+                } else {
+                    head_result
+                }
+            }
+            Operator::OrOr => {
+                if !success {
+                    execute(*tail)
+                } else {
+                    head_result
+                }
+            }
+            Operator::SemiColon => execute(*tail),
+            _ => Err(ExecutionError::InvalidOperator(op.to_string())),
+        },
+    }
 }
