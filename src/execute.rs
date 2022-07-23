@@ -36,6 +36,8 @@ pub enum ExecutionError {
     ExecOtherError(String),
     #[error("interrupted")]
     InterruptError,
+    #[error("quited")]
+    QuitError,
     #[error("fork error ({0})")]
     ForkError(String),
     #[error("pipe error ({0})")]
@@ -55,6 +57,9 @@ fn exec_and_fork(command: Command) -> Result<i32, ExecutionError> {
                 Ok(WaitStatus::Exited(_, status)) => Ok(status),
                 Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGINT, _)) => {
                     Err(ExecutionError::InterruptError)
+                }
+                Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGQUIT, _)) => {
+                    Err(ExecutionError::QuitError)
                 }
                 Err(err) => Err(ExecutionError::ExecError(err.to_string())),
                 _ => {
@@ -129,6 +134,9 @@ fn exec_commands(
                     Ok(WaitStatus::Exited(_, status)) => Ok(Some(status)),
                     Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGINT, _)) => {
                         Err(ExecutionError::InterruptError)
+                    }
+                    Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGQUIT, _)) => {
+                        Err(ExecutionError::QuitError)
                     }
                     Ok(WaitStatus::Signaled(_, nix::sys::signal::Signal::SIGTERM, _)) => {
                         Err(ExecutionError::Exit)

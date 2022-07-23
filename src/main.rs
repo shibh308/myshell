@@ -21,6 +21,7 @@ fn main() {
 }
 
 extern "C" fn sigint_handler_fn(c: i32) {}
+extern "C" fn sigquit_handler_fn(c: i32) {}
 
 fn set_signal_handler() {
     use nix::sys::signal;
@@ -30,6 +31,12 @@ fn set_signal_handler() {
             signal::SigHandler::Handler(sigint_handler_fn),
         ) {
             println!("SIGINT handler set failed");
+        }
+        if let Err(_) = signal::signal(
+            signal::Signal::SIGQUIT,
+            signal::SigHandler::Handler(sigquit_handler_fn),
+        ) {
+            println!("SIGQUIT handler set failed");
         }
     }
 }
