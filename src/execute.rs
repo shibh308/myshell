@@ -46,6 +46,8 @@ pub enum ExecutionError {
     PipeError(String),
     #[error("command is empty")]
     CommandIsEmpty,
+    #[error("statement is empty")]
+    StatementIsEmpty,
     #[error("cd error")]
     CdError(CdError),
     #[error("exit")]
@@ -64,10 +66,7 @@ fn exec_and_fork(command: Command) -> Result<i32, ExecutionError> {
                     Err(ExecutionError::QuitError)
                 }
                 Err(err) => Err(ExecutionError::ExecError(err.to_string())),
-                _ => {
-                    let command_str = command.str.iter().fold("".to_string(), |x, y| x + " " + y);
-                    Err(ExecutionError::ExecOtherError(command_str))
-                }
+                _ => Err(ExecutionError::ExecOtherError(command.to_string())),
             }
         }
         Ok(ForkResult::Child) => unsafe {
@@ -201,10 +200,16 @@ fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
     if let Some(path) = pipe_block.to {
         let cstr = CString::new(path.clone()).unwrap();
         let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(cstr.to_bytes_with_nul()) };
+        use nix::sys::stat::Mode;
         match nix::fcntl::open(
             cstr,
             nix::fcntl::OFlag::O_WRONLY | nix::fcntl::OFlag::O_CREAT,
-            nix::sys::stat::Mode::all(),
+            Mode::S_IRUSR
+                | Mode::S_IWUSR
+                | Mode::S_IRGRP
+                | Mode::S_IWGRP
+                | Mode::S_IROTH
+                | Mode::S_IWOTH,
         ) {
             Ok(fd) => output_fd = fd,
             Err(err) => {
@@ -248,7 +253,7 @@ fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
     Ok(res.unwrap())
 }
 
-pub fn execute(commands: Commands) -> Result<i32, ExecutionError> {
+fn execute_commands(commands: Commands) -> Result<i32, ExecutionError> {
     let head_result = execute_pipe_block(commands.head);
     let success = head_result.clone().map_or(false, |x| x == 0);
     match commands.tail {
@@ -256,20 +261,61 @@ pub fn execute(commands: Commands) -> Result<i32, ExecutionError> {
         Some((op, tail)) => match op {
             Operator::AndAnd => {
                 if success {
-                    execute(*tail)
+                    execute_commands(*tail)
                 } else {
                     head_result
                 }
             }
             Operator::OrOr => {
                 if !success {
-                    execute(*tail)
+                    execute_commands(*tail)
                 } else {
                     head_result
                 }
             }
-            Operator::SemiColon => execute(*tail),
             _ => Err(ExecutionError::InvalidOperator(op.to_string())),
         },
+    }
+}
+
+fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError> {
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { child }) => Ok(0),
+        Ok(ForkResult::Child) => {
+            let pid = std::process::id();
+            println!(
+                "background process launched: \"{1}\" (pid {0})",
+                pid,
+                commands.to_string()
+            );
+            match execute_commands(commands) {
+                Ok(status) => {
+                    println!("process {} finished with code {}", pid, status);
+                    std::process::exit(status);
+                }
+                Err(err) => {
+                    println!("process {} raises an error: {}", pid, err.to_string());
+                    std::process::exit(-1);
+                }
+            }
+            unreachable!()
+        }
+        Err(err) => Err(ExecutionError::ForkError(err.to_string())),
+    }
+}
+
+pub fn execute(stmt: Statement) -> Result<i32, ExecutionError> {
+    let mut res = None;
+    if stmt.0.is_empty() {
+        Err(ExecutionError::StatementIsEmpty)
+    } else {
+        for (b, background) in stmt.0 {
+            if background {
+                res = Some(execute_commands_background(b)?);
+            } else {
+                res = Some(execute_commands(b)?);
+            }
+        }
+        Ok(res.unwrap())
     }
 }

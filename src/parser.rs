@@ -4,13 +4,15 @@ use lexer::{LexError, Operator, Token};
 use thiserror::Error;
 
 /*
-   <commands> ::= <command> [ <operator> <commands> ]?
-   <pipe>     ::= <command> [ < <str> ]? [ <pipe2> ]? [ > <str> ]?
-   <pipe2>    ::= <command> [ | <pipe2> ]?
-   <command>  ::= [ <str> ]+
-   <operator> ::= "&&" | "||"
-   <str>      ::= <char>+
-   <char>     ::= any character
+   <statement> ::= <commands> [ ; <statement> ]?
+   <commands>  ::= <commands2> [ & ]? | <epsilon>
+   <commands2> ::= <command> [ <operator> <commands2> ]?
+   <pipe>      ::= <command> [ < <str> ]? [ <pipe2> ]? [ > <str> ]?
+   <pipe2>     ::= <command> [ | <pipe2> ]?
+   <command>   ::= [ <str> ]+
+   <operator>  ::= "&&" | "||"
+   <str>       ::= <char>+
+   <char>      ::= any character
 */
 
 #[derive(Clone, Error, Debug)]
@@ -30,7 +32,10 @@ pub struct Command {
 
 impl Command {
     pub fn to_string(&self) -> String {
-        self.str.iter().fold("".to_string(), |x, y| x + " " + y)
+        self.str
+            .iter()
+            .skip(1)
+            .fold(self.str[0].clone(), |x, y| x + " " + y)
     }
 }
 
@@ -84,16 +89,27 @@ impl Commands {
     }
 }
 
-pub fn make_parse_tree_from_str(s: &str) -> Result<Commands, ErrorEnum> {
+#[derive(Clone, Debug)]
+pub struct Statement(pub Vec<(Commands, bool)>);
+
+impl Statement {
+    pub fn to_string(&self) -> String {
+        self.0.iter().fold("".to_string(), |x, (y, b)| {
+            x + "; " + &y.to_string() + (if *b { "&" } else { "" })
+        })
+    }
+}
+
+pub fn make_parse_tree_from_str(s: &str) -> Result<Statement, ErrorEnum> {
     match lexer::lex(s) {
         Ok(tokens) => {
             let mut i = 0;
-            match parse_commands(&tokens, &mut i) {
-                Ok(commands) => {
+            match parse_statement(&tokens, &mut i) {
+                Ok(stmt) => {
                     if i != tokens.len() {
                         Err(ErrorEnum::ParseError(ParseError::ParseFinished(i)))
                     } else {
-                        Ok(commands)
+                        Ok(stmt)
                     }
                 }
                 Err(err) => Err(ErrorEnum::ParseError(err)),
@@ -121,6 +137,24 @@ fn parse_command(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Command, P
     } else {
         Ok(Command { str: v })
     }
+}
+
+fn parse_pipe(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Pipe, ParseError> {
+    let command = parse_command(tokens, l)?;
+    if *l < tokens.len() {
+        if let Token::Operator(Operator::Pipe) = tokens[*l] {
+            *l += 1;
+            let tail = parse_pipe(tokens, l)?;
+            return Ok(Pipe {
+                command,
+                tail: Some(Box::new(tail)),
+            });
+        }
+    }
+    Ok(Pipe {
+        command,
+        tail: None,
+    })
 }
 
 fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlock, ParseError> {
@@ -206,33 +240,30 @@ fn parse_commands(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Commands,
                     tail: Some((Operator::OrOr, Box::new(tail))),
                 })
             }
-            Token::Operator(Operator::SemiColon) => {
-                *l += 1;
-                let tail = parse_commands(tokens, l)?;
-                Ok(Commands {
-                    head,
-                    tail: Some((Operator::SemiColon, Box::new(tail))),
-                })
-            }
             _ => Ok(Commands { head, tail: None }),
         }
     }
 }
 
-fn parse_pipe(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Pipe, ParseError> {
-    let command = parse_command(tokens, l)?;
-    if *l < tokens.len() {
-        if let Token::Operator(Operator::Pipe) = tokens[*l] {
+fn parse_statement(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Statement, ParseError> {
+    let mut vec = Vec::new();
+    while *l < tokens.len() {
+        if let Token::Operator(Operator::SemiColon) = tokens[*l] {
             *l += 1;
-            let tail = parse_pipe(tokens, l)?;
-            return Ok(Pipe {
-                command,
-                tail: Some(Box::new(tail)),
-            });
+            continue;
         }
+        let commands = parse_commands(tokens, l)?;
+        let background = if *l < tokens.len() {
+            if let Token::Operator(Operator::And) = tokens[*l] {
+                *l += 1;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        vec.push((commands, background));
     }
-    Ok(Pipe {
-        command,
-        tail: None,
-    })
+    Ok(Statement(vec))
 }

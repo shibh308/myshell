@@ -3,6 +3,7 @@ use thiserror::Error;
 
 #[derive(Clone)]
 pub enum Operator {
+    And,
     AndAnd,
     OrOr,
     Pipe,
@@ -16,6 +17,7 @@ pub enum Operator {
 impl Operator {
     fn to_str(&self) -> &str {
         match &self {
+            Operator::And => "&",
             Operator::AndAnd => "&&",
             Operator::OrOr => "||",
             Operator::Pipe => "|",
@@ -73,7 +75,8 @@ pub fn lex(s: &str) -> Result<Vec<Token>, LexError> {
                     tokens.push(Token::Operator(Operator::AndAnd));
                     i += 2;
                 } else {
-                    return Err(LexError::AryOperator(i + 1, '&'));
+                    tokens.push(Token::Operator(Operator::And));
+                    i += 1;
                 }
             } else if s[i] == '|' {
                 if i + 1 < n && s[i + 1] == '|' {

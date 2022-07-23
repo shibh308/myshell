@@ -16,29 +16,25 @@ use std::path::PathBuf;
 use std::process::exit;
 
 fn main() {
-    set_signal_handler();
+    prepare();
     main_loop();
 }
 
 extern "C" fn sigint_handler_fn(c: i32) {}
 extern "C" fn sigquit_handler_fn(c: i32) {}
 
-fn set_signal_handler() {
-    use nix::sys::signal;
+fn prepare() {
+    use nix::sys::signal::*;
     unsafe {
-        if let Err(_) = signal::signal(
-            signal::Signal::SIGINT,
-            signal::SigHandler::Handler(sigint_handler_fn),
-        ) {
+        if let Err(_) = signal(Signal::SIGINT, SigHandler::Handler(sigint_handler_fn)) {
             println!("SIGINT handler set failed");
         }
-        if let Err(_) = signal::signal(
-            signal::Signal::SIGQUIT,
-            signal::SigHandler::Handler(sigquit_handler_fn),
-        ) {
+        if let Err(_) = signal(Signal::SIGQUIT, SigHandler::Handler(sigquit_handler_fn)) {
             println!("SIGQUIT handler set failed");
         }
     }
+    use nix::sys::stat::{umask, Mode};
+    umask(Mode::S_IWGRP | Mode::S_IWOTH);
 }
 
 fn main_loop() {
@@ -63,16 +59,17 @@ fn main_loop() {
                 Ok(status) => {
                     // println!("status: {}", status);
                 }
+                Err(ExecutionError::Exit) => {
+                    println!("exit");
+                    exit(0);
+                }
+                Err(ExecutionError::StatementIsEmpty) => {}
                 Err(err) => {
-                    if let ExecutionError::Exit = err {
-                        println!("exit");
-                        exit(0);
-                    }
                     println!("{}", utils::ErrorEnum::ExecutionError(err));
                 }
             },
             Err(err) => {
-                println!("myshell: {}", err);
+                println!("{}", err);
             }
         }
     }
