@@ -45,10 +45,7 @@ impl std::fmt::Debug for Operator {
 }
 
 #[derive(Clone, Error, Debug)]
-pub enum LexError {
-    #[error("invalid ary operator (at position {0}, operator \"{1}\")")]
-    AryOperator(usize, char),
-}
+pub enum LexError {}
 
 #[derive(Clone, Debug)]
 pub enum Token {

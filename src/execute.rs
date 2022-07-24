@@ -1,5 +1,6 @@
 use crate::lexer::*;
 use crate::parser::*;
+use crate::println2;
 use crate::utils::ErrorEnum;
 use nix::errno::Errno;
 use nix::sys::wait::{WaitPidFlag, WaitStatus};
@@ -80,7 +81,7 @@ fn exec_and_fork(command: Command) -> Result<i32, ExecutionError> {
             match nix::unistd::execvp(cstr, &argv) {
                 Ok(_) => std::process::exit(0),
                 Err(_) => {
-                    println!("myshell: command not found: {}", command.str[0]);
+                    println2!("myshell: command not found: {}", command.str[0]);
                     std::process::exit(-1)
                 }
             }
@@ -183,7 +184,7 @@ fn exec_command(
                     std::process::exit(status);
                 }
                 Err(err) => {
-                    println!("{}", ErrorEnum::ExecutionError(err));
+                    println2!("{}", ErrorEnum::ExecutionError(err));
                     std::process::exit(-1);
                 }
             }
@@ -319,21 +320,24 @@ fn execute_commands(commands: Commands) -> Result<i32, ExecutionError> {
 
 fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError> {
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => Ok(0),
+        Ok(ForkResult::Parent { child: _ }) => Ok(0),
         Ok(ForkResult::Child) => {
             let pid = std::process::id();
-            println!(
+            println2!(
                 "background process launched: \"{1}\" (pid {0})",
                 pid,
                 commands.to_string()
             );
+            print!("\r");
             match execute_commands(commands) {
                 Ok(status) => {
-                    println!("process {} finished with code {}", pid, status);
+                    println2!();
+                    println2!("process {} finished with code {}", pid, status);
                     std::process::exit(status);
                 }
                 Err(err) => {
-                    println!("process {} raises an error: {}", pid, err.to_string());
+                    println2!();
+                    println2!("process {} raises an error: {}", pid, err.to_string());
                     std::process::exit(-1);
                 }
             }

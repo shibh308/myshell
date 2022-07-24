@@ -1,5 +1,5 @@
 use crate::lexer;
-use crate::utils::ErrorEnum;
+use crate::utils::{replace_tokens, Env, ErrorEnum};
 use lexer::{LexError, Operator, Token};
 use thiserror::Error;
 
@@ -103,22 +103,25 @@ impl Statement {
     }
 }
 
-pub fn make_parse_tree_from_str(s: &str) -> Result<Statement, ErrorEnum> {
+pub fn make_parse_tree_from_str(s: &str, env: &Env) -> Result<Statement, ErrorEnum> {
     match lexer::lex(s) {
-        Ok(tokens) => {
-            let mut i = 0;
-            match parse_statement(&tokens, &mut i) {
-                Ok(stmt) => {
-                    if i != tokens.len() {
-                        Err(ErrorEnum::ParseError(ParseError::ParseFinished(i)))
-                    } else {
-                        Ok(stmt)
-                    }
-                }
-                Err(err) => Err(ErrorEnum::ParseError(err)),
+        Ok(tokens) => make_parse_tree_from_tokens(tokens, env),
+        Err(err) => Err(ErrorEnum::LexError(err)),
+    }
+}
+
+pub fn make_parse_tree_from_tokens(tokens: Vec<Token>, env: &Env) -> Result<Statement, ErrorEnum> {
+    let tokens = replace_tokens(tokens, env);
+    let mut i = 0;
+    match parse_statement(&tokens, &mut i) {
+        Ok(stmt) => {
+            if i != tokens.len() {
+                Err(ErrorEnum::ParseError(ParseError::ParseFinished(i)))
+            } else {
+                Ok(stmt)
             }
         }
-        Err(err) => Err(ErrorEnum::LexError(err)),
+        Err(err) => Err(ErrorEnum::ParseError(err)),
     }
 }
 

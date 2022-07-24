@@ -23,6 +23,10 @@ impl Reader {
             cur: 0,
         }
     }
+    pub fn clear(&mut self) {
+        self.cmd = Vec::new();
+        self.cur = 0;
+    }
     pub fn get_enum(&mut self) -> ReadEnum {
         let mut attr = tcgetattr(0).unwrap();
         let bef = attr.clone();
@@ -35,10 +39,10 @@ impl Reader {
         res
     }
     fn restore_cursor(&mut self) {
-        while self.cur != 0 {
-            print!("\x1b[C");
-            self.cur -= 1;
+        if self.cur != 0 {
+            print!("\x1b[{}C", self.cur);
         }
+        self.cur = 0;
         stdout().flush().unwrap();
     }
     fn add_char(&mut self, ch: char) {
@@ -67,8 +71,6 @@ impl Reader {
         let mut unc_buf = [0; 8];
         let mut now_idx = 0;
         let mut escape_flag = 0;
-
-        let mut cur = 0;
 
         loop {
             match read(0, &mut unc_buf[now_idx..now_idx + 1]) {
@@ -120,8 +122,6 @@ impl Reader {
                                 return ReadEnum::Command(cmd);
                             }
                             '\t' => {
-                                println2!();
-                                stdout().flush().unwrap();
                                 let cmd = self.cmd.iter().collect();
                                 return ReadEnum::Comp(cmd);
                             }
