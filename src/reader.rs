@@ -1,3 +1,4 @@
+use crate::utils::Env;
 use nix::errno::Errno;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 use nix::unistd::read;
@@ -14,6 +15,7 @@ pub enum ReadEnum {
 pub struct Reader {
     cmd: Vec<char>,
     cur: usize,
+    history_cur: Option<usize>,
 }
 
 impl Reader {
@@ -21,18 +23,19 @@ impl Reader {
         Reader {
             cmd: Vec::new(),
             cur: 0,
+            history_cur: None,
         }
     }
     pub fn clear(&mut self) {
         self.cmd = Vec::new();
         self.cur = 0;
     }
-    pub fn get_enum(&mut self) -> ReadEnum {
+    pub fn get_enum(&mut self, env: &Env) -> ReadEnum {
         let mut attr = tcgetattr(0).unwrap();
         let bef = attr.clone();
         cfmakeraw(&mut attr);
         tcsetattr(0, SetArg::TCSANOW, &attr);
-        let res = self.stdin_read();
+        let res = self.stdin_read(env);
         self.restore_cursor();
         tcsetattr(0, SetArg::TCSANOW, &bef).unwrap();
         stdout().flush().unwrap();
@@ -44,6 +47,22 @@ impl Reader {
         }
         self.cur = 0;
         stdout().flush().unwrap();
+    }
+    fn reset_cmd(&mut self) {
+        let diff = self.cmd.len() - self.cur;
+        if diff != 0 {
+            print!("\x1b[{}D", diff);
+        }
+        print!("\x1b[J");
+        stdout().flush().unwrap();
+        self.cmd = Vec::new();
+        self.cur = 0;
+    }
+    fn set_cmd(&mut self, cmd: String) {
+        print!("{}", cmd);
+        stdout().flush().unwrap();
+        self.cmd = cmd.chars().collect();
+        self.cur = 0;
     }
     fn add_char(&mut self, ch: char) {
         let mut buf = vec![0 as char; self.cur];
@@ -64,7 +83,7 @@ impl Reader {
         }
         stdout().flush().unwrap();
     }
-    pub fn stdin_read(&mut self) -> ReadEnum {
+    pub fn stdin_read(&mut self, env: &Env) -> ReadEnum {
         const ESCAPE: char = '\x1b';
         const DEL: char = '\x7f';
 
@@ -91,6 +110,28 @@ impl Reader {
                             }
                             2 => {
                                 match ch {
+                                    'A' => {
+                                        self.reset_cmd();
+                                        self.history_cur = match self.history_cur {
+                                            Some(x) if x == 0 => None,
+                                            Some(x) => Some(x - 1),
+                                            None => Some(env.history.len() - 1),
+                                        };
+                                        if let Some(idx) = self.history_cur {
+                                            self.set_cmd(env.history[idx].1.clone());
+                                        }
+                                    }
+                                    'B' => {
+                                        self.reset_cmd();
+                                        self.history_cur = match self.history_cur {
+                                            Some(x) if x + 1 == env.history.len() => None,
+                                            Some(x) => Some(x + 1),
+                                            None => Some(0),
+                                        };
+                                        if let Some(idx) = self.history_cur {
+                                            self.set_cmd(env.history[idx].1.clone());
+                                        }
+                                    }
                                     'C' => {
                                         if self.cur != 0 {
                                             self.cur -= 1;
@@ -119,6 +160,7 @@ impl Reader {
                                 stdout().flush().unwrap();
                                 let cmd = self.cmd.iter().collect();
                                 self.cmd = Vec::new();
+                                self.history_cur = None;
                                 return ReadEnum::Command(cmd);
                             }
                             '\t' => {

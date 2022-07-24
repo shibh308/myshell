@@ -54,7 +54,7 @@ fn main_loop() {
     env.write_header();
     let mut reader = reader::Reader::new();
     loop {
-        match reader.get_enum() {
+        match reader.get_enum(&env) {
             ReadEnum::Command(input) => {
                 let parse_result = parser::make_parse_tree_from_str(&input, &env);
                 match match parse_result {
