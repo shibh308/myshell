@@ -4,6 +4,16 @@ use crate::parser::ParseError;
 use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
 
+#[macro_export]
+macro_rules! println2 {
+    () => (print!("\n\r"));
+    ($($arg:tt)*) => ({
+        print!($($arg)*);
+        print!("\n\r");
+    })
+}
+pub(crate) use println2;
+
 #[derive(Clone, Debug)]
 pub enum ErrorEnum {
     ParseError(ParseError),

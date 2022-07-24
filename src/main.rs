@@ -4,14 +4,17 @@ extern crate nix;
 mod execute;
 mod lexer;
 mod parser;
+mod reader;
 mod utils;
 
 use colored::Colorize;
 use execute::ExecutionError;
 use nix::errno::Errno;
 use nix::sys::signal::SigHandler;
+use nix::sys::termios::Termios;
 use parser::Pipe;
-use std::io::{stdin, stdout, Error, Write};
+use reader::ReadEnum;
+use std::io::{stdin, stdout, Error, Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -24,8 +27,8 @@ extern "C" fn sigint_handler_fn(c: i32) {}
 extern "C" fn sigquit_handler_fn(c: i32) {}
 
 fn prepare() {
-    use nix::sys::signal::*;
     unsafe {
+        use nix::sys::signal::*;
         if let Err(_) = signal(Signal::SIGINT, SigHandler::Handler(sigint_handler_fn)) {
             println!("SIGINT handler set failed");
         }
@@ -50,26 +53,31 @@ fn main_loop() {
             (&currenct_dir).green(),
         );
         stdout().flush().unwrap();
-        let mut input_str = String::new();
-        stdin().read_line(&mut input_str).expect("Failed to read");
-        let input_str = input_str.trim_end();
-        let parse_result = parser::make_parse_tree_from_str(input_str);
-        match parse_result {
-            Ok(commands) => match execute::execute(commands) {
-                Ok(status) => {
-                    // println!("status: {}", status);
+        let mut reader = reader::Reader::new();
+        match reader.get_enum() {
+            ReadEnum::Command(input) => {
+                let parse_result = parser::make_parse_tree_from_str(&input);
+                match parse_result {
+                    Ok(commands) => match execute::execute(commands) {
+                        Ok(status) => {
+                            // println!("status: {}", status);
+                        }
+                        Err(ExecutionError::Exit) => {
+                            println2!("exit");
+                            break;
+                        }
+                        Err(ExecutionError::StatementIsEmpty) => {}
+                        Err(err) => {
+                            println2!("{}", utils::ErrorEnum::ExecutionError(err));
+                        }
+                    },
+                    Err(err) => {
+                        println2!("{}", err);
+                    }
                 }
-                Err(ExecutionError::Exit) => {
-                    println!("exit");
-                    exit(0);
-                }
-                Err(ExecutionError::StatementIsEmpty) => {}
-                Err(err) => {
-                    println!("{}", utils::ErrorEnum::ExecutionError(err));
-                }
-            },
-            Err(err) => {
-                println!("{}", err);
+            }
+            ReadEnum::Comp(input) => {
+                break;
             }
         }
     }
