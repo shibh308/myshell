@@ -106,6 +106,8 @@ impl Display {
     }
     pub fn stdin_read(&mut self, env: &Env) -> ReadEnum {
         const ESCAPE: char = '\x1b';
+        const CTRL_C: char = '\x03';
+        const CTRL_D: char = '\x04';
         const DEL: char = '\x7f';
 
         let mut unc_buf = [0; 8];
@@ -203,6 +205,25 @@ impl Display {
                                 }
                                 ESCAPE => {
                                     escape_flag = 1;
+                                }
+                                CTRL_C => {
+                                    self.restore_cursor();
+                                    print!("\x1b[J");
+                                    println2!();
+                                    self.write_header(&env);
+                                    stdout().flush().unwrap();
+                                    self.cmd = Vec::new();
+                                    self.history_cur = None;
+                                    // self.scroll();
+                                }
+                                CTRL_D => {
+                                    self.restore_cursor();
+                                    print!("\x1b[2J");
+                                    print!("\x1b[0;0H");
+                                    self.write_header(&env);
+                                    stdout().flush().unwrap();
+                                    self.cmd = Vec::new();
+                                    self.history_cur = None;
                                 }
                                 _ => {}
                             },
