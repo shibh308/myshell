@@ -1,11 +1,11 @@
-use crate::complete::get_history;
 use crate::execute::{CdError, ExecutionError};
 use crate::lexer::LexError;
 use crate::lexer::Token;
 use crate::parser::ParseError;
-use colored::Colorize;
+use crate::search::Trie;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::{create_dir, File};
+use std::io::{BufRead, BufReader};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use thiserror::Error;
@@ -19,6 +19,8 @@ macro_rules! println2 {
     })
 }
 pub(crate) use println2;
+use std::collections::BTreeSet;
+use std::env::VarError;
 
 #[derive(Clone, Debug)]
 pub enum ErrorEnum {
@@ -52,11 +54,57 @@ impl Display for ErrorEnum {
     }
 }
 
-#[derive(Debug)]
+fn get_history(history_file: &Option<File>) -> Vec<(i32, String)> {
+    match &history_file {
+        Some(file) => {
+            let reader = BufReader::new(file);
+            reader
+                .lines()
+                .filter_map(|x| x.ok())
+                .filter_map(|x| match x.find(' ') {
+                    Some(idx) => match &x[..idx].parse::<i32>() {
+                        Ok(status) => Some((status.clone(), x[idx + 1..].to_string())),
+                        Err(_) => None,
+                    },
+                    None => None,
+                })
+                .collect::<Vec<_>>()
+        }
+        None => Vec::new(),
+    }
+}
+
+fn get_path() -> Vec<String> {
+    let paths = match std::env::var("PATH") {
+        Ok(path) => path.split(":").map(|x| x.to_string()).collect(),
+        Err(err) => {
+            println!("myshell: failed to load PATH ({})", err.to_string());
+            Vec::new()
+        }
+    };
+    let mut res = Vec::new();
+    for path in paths {
+        if let Ok(bins) = std::fs::read_dir(path) {
+            res.extend(bins.filter_map(|x| {
+                if let Ok(bin) = x {
+                    if bin.file_type().map_or(false, |x| !x.is_dir()) {
+                        if let Some(file_name) = bin.path().file_name() {
+                            return Some(file_name.to_str().unwrap().to_string());
+                        }
+                    }
+                }
+                None
+            }));
+        }
+    }
+    res
+}
+
 pub struct Env {
-    user_name: String,
-    host_name: String,
+    pub user_name: String,
+    pub host_name: String,
     home_dir: PathBuf,
+    pub path_set: Trie,
     pub history: Vec<(i32, String)>,
     pub config_dir: PathBuf,
     pub history_file: Option<File>,
@@ -97,9 +145,13 @@ impl Env {
         };
         let history = get_history(&history_file);
 
+        let paths = get_path();
+        let path_set = Trie::new(paths);
+
         Env {
             user_name: whoami::username(),
             host_name: whoami::hostname(),
+            path_set,
             history,
             home_dir,
             config_dir,
@@ -107,19 +159,7 @@ impl Env {
             auto_exec_path,
         }
     }
-    pub fn write_header(&self) {
-        let currenct_dir = match std::env::current_dir() {
-            Ok(path) => path.display().to_string(),
-            Err(_) => "???".to_string(),
-        };
-        print!(
-            "{}@{}:{}: ",
-            (self.host_name).cyan(),
-            (self.user_name).cyan(),
-            (&currenct_dir).green(),
-        );
-        std::io::stdout().flush().unwrap();
-    }
+
     pub fn push_history(&mut self, cmd: String, status: i32) {
         self.history.push((status, cmd.clone()));
         if let Some(file) = &self.history_file {

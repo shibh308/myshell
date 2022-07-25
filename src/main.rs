@@ -2,22 +2,23 @@ extern crate colored;
 extern crate nix;
 
 mod complete;
+mod display;
 mod execute;
 mod lexer;
 mod parser;
-mod reader;
+mod search;
 mod utils;
 
+use display::ReadEnum;
 use execute::ExecutionError;
 use nix::errno::Errno;
 use nix::sys::signal::SigHandler;
 use nix::sys::termios::Termios;
-use parser::Pipe;
-use reader::ReadEnum;
+use parser::ParseError;
 use std::io::{stdin, stdout, Error, Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
-use utils::Env;
+use utils::{Env, ErrorEnum};
 
 fn main() {
     prepare();
@@ -50,12 +51,13 @@ enum ExecuteResult {
 
 fn main_loop() {
     let mut env = Env::new();
-    println!("{:?}", env);
-    env.write_header();
-    let mut reader = reader::Reader::new();
+    let mut display = display::Display::new();
+    display.write_header(&env);
     loop {
-        match reader.get_enum(&env) {
+        match display.get_enum(&env) {
             ReadEnum::Command(input) => {
+                display.clear_comp();
+
                 let parse_result = parser::make_parse_tree_from_str(&input, &env);
                 match match parse_result {
                     Ok(commands) => match execute::execute(commands) {
@@ -89,26 +91,14 @@ fn main_loop() {
                         break;
                     }
                 }
-                reader.clear();
-                env.write_header();
+                display.clear();
+                display.write_header(&env);
             }
             ReadEnum::Comp(input) => {
-                /*
-                let tokens = lexer::lex(s).unwrap();
-                let (pos, token_str) = if tokens.is_empty() {
-                    (0, "".to_string());
-                } else {
-                    // lex
-                    let mut tokens_without_last = tokens.clone();
-                    tokens_without_last.pop();
-                }
-                 */
-                let parse_result = parser::make_parse_tree_from_str(&input, &env);
-                println2!();
-                println2!("{:?}", parse_result);
-                println2!();
-                reader.clear();
-                env.write_header();
+                let comp_res = complete::comp(input.clone(), &mut env);
+                display.write_comp(&input, comp_res);
+                // display.clear();
+                // display.write_header(&env);
                 // break;
             }
         }

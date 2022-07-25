@@ -349,10 +349,10 @@ fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError
 
 pub fn execute(stmt: Statement) -> Result<i32, ExecutionError> {
     let mut res = None;
-    if stmt.0.is_empty() {
+    if stmt.stmt.is_empty() {
         Err(ExecutionError::StatementIsEmpty)
     } else {
-        for (b, background) in stmt.0 {
+        for (b, background) in stmt.stmt {
             if background {
                 res = Some(execute_commands_background(b)?);
             } else {

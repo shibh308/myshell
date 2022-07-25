@@ -1,4 +1,5 @@
 use crate::utils::Env;
+use colored::Colorize;
 use nix::errno::Errno;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 use nix::unistd::read;
@@ -12,18 +13,22 @@ pub enum ReadEnum {
     Comp(String),
 }
 
-pub struct Reader {
+pub struct Display {
     cmd: Vec<char>,
     cur: usize,
     history_cur: Option<usize>,
+    comp_cur: Option<usize>,
+    suggestion: Option<Vec<char>>,
 }
 
-impl Reader {
-    pub fn new() -> Reader {
-        Reader {
+impl Display {
+    pub fn new() -> Display {
+        Display {
             cmd: Vec::new(),
             cur: 0,
             history_cur: None,
+            comp_cur: None,
+            suggestion: None,
         }
     }
     pub fn clear(&mut self) {
@@ -48,6 +53,12 @@ impl Reader {
         self.cur = 0;
         stdout().flush().unwrap();
     }
+    fn set_cmd(&mut self, cmd: String) {
+        print!("{}", cmd);
+        stdout().flush().unwrap();
+        self.cmd = cmd.chars().collect();
+        self.cur = 0;
+    }
     fn reset_cmd(&mut self) {
         let diff = self.cmd.len() - self.cur;
         if diff != 0 {
@@ -56,12 +67,6 @@ impl Reader {
         print!("\x1b[J");
         stdout().flush().unwrap();
         self.cmd = Vec::new();
-        self.cur = 0;
-    }
-    fn set_cmd(&mut self, cmd: String) {
-        print!("{}", cmd);
-        stdout().flush().unwrap();
-        self.cmd = cmd.chars().collect();
         self.cur = 0;
     }
     fn add_char(&mut self, ch: char) {
@@ -82,6 +87,19 @@ impl Reader {
             print!("\x1b[{}D", self.cur);
         }
         stdout().flush().unwrap();
+    }
+    pub fn write_header(&self, env: &Env) {
+        let currenct_dir = match std::env::current_dir() {
+            Ok(path) => path.display().to_string(),
+            Err(_) => "???".to_string(),
+        };
+        print!(
+            "{}@{}:{}: ",
+            (env.host_name).cyan(),
+            (env.user_name).cyan(),
+            (&currenct_dir).green(),
+        );
+        std::io::stdout().flush().unwrap();
     }
     pub fn stdin_read(&mut self, env: &Env) -> ReadEnum {
         const ESCAPE: char = '\x1b';
@@ -164,8 +182,10 @@ impl Reader {
                                 return ReadEnum::Command(cmd);
                             }
                             '\t' => {
-                                let cmd = self.cmd.iter().collect();
-                                return ReadEnum::Comp(cmd);
+                                self.restore_cursor();
+                                self.apply_suggestion();
+                                // let cmd = self.cmd.iter().collect();
+                                // return ReadEnum::Comp(cmd);
                             }
                             ch if ch.is_ascii_control() => match ch {
                                 DEL => {
@@ -181,6 +201,8 @@ impl Reader {
                             },
                             ch => {
                                 self.add_char(ch);
+                                let cmd = self.cmd.iter().collect();
+                                return ReadEnum::Comp(cmd);
                             }
                         }
                     } else {
@@ -194,4 +216,30 @@ impl Reader {
         }
         unreachable!()
     }
+    pub fn apply_suggestion(&mut self) {
+        print!("\x1b[J");
+        if let Some(s) = &self.suggestion {
+            for &c in s {
+                print!("{}", c);
+                self.cmd.push(c);
+            }
+        }
+        stdout().flush().unwrap();
+        self.suggestion = None;
+    }
+    pub fn write_comp(&mut self, pattern: &String, comp: Vec<String>) {
+        print!("\x1b[J");
+        stdout().flush().unwrap();
+        self.suggestion = if !comp.is_empty() && pattern.len() < comp[0].len() {
+            let diff = comp[0].len() - pattern.len();
+            let s = &comp[0][pattern.len()..];
+            print!("{}", s.dimmed());
+            print!("\x1b[{}D", diff);
+            stdout().flush().unwrap();
+            Some(s.chars().collect())
+        } else {
+            None
+        }
+    }
+    pub fn clear_comp(&mut self) {}
 }

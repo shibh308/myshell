@@ -25,6 +25,8 @@ pub enum ParseError {
     InvalidToken(usize),
     #[error("redirected multi time (at token {0})")]
     MultiRedirect(usize),
+    #[error("redirected file is empty (at token {0})")]
+    RedirectIsEmpty(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -93,11 +95,14 @@ impl Commands {
 }
 
 #[derive(Clone, Debug)]
-pub struct Statement(pub Vec<(Commands, bool)>);
+pub struct Statement {
+    pub stmt: Vec<(Commands, bool)>,
+    pub last_empty: bool,
+}
 
 impl Statement {
     pub fn to_string(&self) -> String {
-        self.0.iter().fold("".to_string(), |x, (y, b)| {
+        self.stmt.iter().fold("".to_string(), |x, (y, b)| {
             x + "; " + &y.to_string() + (if *b { "&" } else { "" })
         })
     }
@@ -170,22 +175,32 @@ fn parse_redirection(
     to_err: &mut Option<String>,
 ) -> Option<ParseError> {
     for _ in 0..2 {
-        if *l + 1 < tokens.len() {
+        if *l < tokens.len() {
             if let Token::Operator(Operator::Greater) = &tokens[*l] {
+                if *l + 1 == tokens.len() {
+                    return Some(ParseError::RedirectIsEmpty(*l));
+                }
                 if let Token::String(s) = &tokens[*l + 1] {
                     if to.is_some() {
                         return Some(ParseError::MultiRedirect(*l));
                     }
                     *to = Some(s.clone());
                     *l += 2;
+                } else {
+                    return Some(ParseError::RedirectIsEmpty(*l));
                 }
             } else if let Token::Operator(Operator::ErrorRedirect) = &tokens[*l] {
+                if *l + 1 == tokens.len() {
+                    return Some(ParseError::RedirectIsEmpty(*l));
+                }
                 if let Token::String(s) = &tokens[*l + 1] {
                     if to_err.is_some() {
                         return Some(ParseError::MultiRedirect(*l));
                     }
                     *to_err = Some(s.clone());
                     *l += 2;
+                } else {
+                    return Some(ParseError::RedirectIsEmpty(*l));
                 }
             }
         }
@@ -198,11 +213,16 @@ fn parse_pipe_block(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<PipeBlo
     let mut from = None;
     let mut to = None;
     let mut to_err = None;
-    if *l + 1 < tokens.len() {
+    if *l < tokens.len() {
         if let Token::Operator(Operator::Less) = &tokens[*l] {
+            if *l + 1 == tokens.len() {
+                return Err(ParseError::RedirectIsEmpty(*l));
+            }
             if let Token::String(s) = &tokens[*l + 1] {
                 from = Some(s.clone());
                 *l += 2;
+            } else {
+                return Err(ParseError::RedirectIsEmpty(*l));
             }
         }
     }
@@ -279,10 +299,12 @@ fn parse_commands(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Commands,
 }
 
 fn parse_statement(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Statement, ParseError> {
-    let mut vec = Vec::new();
+    let mut stmt = Vec::new();
+    let mut last_empty = true;
     while *l < tokens.len() {
         if let Token::Operator(Operator::SemiColon) = tokens[*l] {
             *l += 1;
+            last_empty = true;
             continue;
         }
         let commands = parse_commands(tokens, l)?;
@@ -296,7 +318,8 @@ fn parse_statement(tokens: &Vec<lexer::Token>, l: &mut usize) -> Result<Statemen
         } else {
             false
         };
-        vec.push((commands, background));
+        stmt.push((commands, background));
+        last_empty = false;
     }
-    Ok(Statement(vec))
+    Ok(Statement { stmt, last_empty })
 }
