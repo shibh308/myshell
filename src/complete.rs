@@ -3,8 +3,10 @@ use crate::parser::{make_parse_tree_from_tokens, ParseError};
 use crate::println2;
 use crate::utils::Env;
 use crate::utils::ErrorEnum;
-use std::fs::File;
+use std::fs::{File, ReadDir};
+use std::io::Error;
 use std::num::ParseIntError;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 enum CompType {
@@ -60,30 +62,80 @@ fn get_comp_type(input: &String, env: &Env) -> CompType {
     }
 }
 
-pub fn comp(input: String, env: &mut Env) -> Vec<String> {
+pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
     match get_comp_type(&input, env) {
         CompType::Bin(path) => {
+            let fin_pos = input.len() - path.clone().map_or(0, |x| x.len());
             let path = path.unwrap_or("".to_string());
+            if path.is_empty() {
+                return (0, Vec::new());
+            }
             for ch in path.chars() {
                 env.path_set.search(ch);
             }
-            // TODO: use iterator
             let v = env.path_set.texts[env.path_set.get_range()]
                 .iter()
                 .cloned()
                 .collect();
             env.path_set.reset();
-            v
+            (fin_pos, v)
         }
         CompType::Path(path) => {
-            println2!();
-            println2!("Path: {:?}", path);
-            println2!();
-            Vec::new()
+            let fin_pos = input.len() - path.clone().map_or(0, |x| x.len());
+            if path.is_some() && path.clone().unwrap() == "~" {
+                return (0, Vec::new());
+            }
+            if path.is_some()
+                && path.clone().unwrap().starts_with("~")
+                && !path.clone().unwrap().starts_with("~/")
+            {
+                return (0, Vec::new());
+            }
+            let (path, ofs_minus) = match path {
+                None => ("./".to_string(), 2),
+                Some(path) => match path.strip_prefix("~") {
+                    Some(path) => (
+                        env.home_dir.display().to_string() + path,
+                        env.home_dir.display().to_string().len() - 1,
+                    ),
+                    None if path.starts_with("/") || path.starts_with(".") => (path, 0),
+                    None => ("./".to_string() + &path, 2),
+                },
+            };
+            let pos = path.rfind('/').map(|x| x + 1).unwrap_or(0);
+            let (path_parent, query) = match path.rfind('/') {
+                Some(idx) => (
+                    path.clone()[..idx + 1].to_string(),
+                    path.clone()[idx + 1..].to_string(),
+                ),
+                None => ("".to_string(), path.clone()),
+            };
+            let files = match std::fs::read_dir(path_parent) {
+                Ok(res) => res
+                    .filter_map(|x| {
+                        if let Ok(x) = x {
+                            if let Some(s) = x.file_name().to_str() {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                Err(_) => Vec::new(),
+            };
+            let matches: Vec<String> = files
+                .iter()
+                .filter(|x| x.starts_with(&query))
+                .cloned()
+                .collect();
+            (fin_pos + pos - ofs_minus, matches)
         }
         CompType::Invalid => {
             println2!();
-            Vec::new()
+            (0, Vec::new())
         }
     }
 }

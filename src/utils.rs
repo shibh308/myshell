@@ -97,13 +97,15 @@ fn get_path() -> Vec<String> {
             }));
         }
     }
+    res.push("cd".to_string());
+    res.push("exit".to_string());
     res
 }
 
 pub struct Env {
     pub user_name: String,
     pub host_name: String,
-    home_dir: PathBuf,
+    pub home_dir: PathBuf,
     pub path_set: Trie,
     pub history: Vec<(i32, String)>,
     pub config_dir: PathBuf,

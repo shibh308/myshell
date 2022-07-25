@@ -95,8 +95,8 @@ fn main_loop() {
                 display.write_header(&env);
             }
             ReadEnum::Comp(input) => {
-                let comp_res = complete::comp(input.clone(), &mut env);
-                display.write_comp(&input, comp_res);
+                let (ofs, comp_res) = complete::comp(input.clone(), &mut env);
+                display.write_comp(&input, comp_res, ofs);
                 // display.clear();
                 // display.write_header(&env);
                 // break;

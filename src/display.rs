@@ -217,7 +217,6 @@ impl Display {
         unreachable!()
     }
     pub fn apply_suggestion(&mut self) {
-        print!("\x1b[J");
         if let Some(s) = &self.suggestion {
             for &c in s {
                 print!("{}", c);
@@ -227,9 +226,14 @@ impl Display {
         stdout().flush().unwrap();
         self.suggestion = None;
     }
-    pub fn write_comp(&mut self, pattern: &String, comp: Vec<String>) {
+    pub fn write_comp(&mut self, input: &String, comp: Vec<String>, ofs: usize) {
         print!("\x1b[J");
         stdout().flush().unwrap();
+        if comp.is_empty() {
+            self.suggestion = None;
+            return;
+        }
+        let pattern = &input[ofs..];
         self.suggestion = if !comp.is_empty() && pattern.len() < comp[0].len() {
             let diff = comp[0].len() - pattern.len();
             let s = &comp[0][pattern.len()..];
