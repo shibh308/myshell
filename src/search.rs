@@ -4,7 +4,6 @@ pub struct TrieNode {
     pub l: usize,
     pub r: usize,
     pub end: bool,
-    pub max_idx: usize,
     pub children: HashMap<u8, usize>,
 }
 
@@ -54,36 +53,18 @@ impl Trie {
                 self.reset();
             }
         }
-        for node in &mut self.nodes {
-            let op = (node.l..node.r).max_by(|x, y| self.counts[*x].cmp(&self.counts[*y]));
-            node.max_idx = op.unwrap();
-        }
     }
     pub fn add_cnt(&mut self, cmd: &String) {
         for c in cmd.chars() {
             self.search(c);
         }
-        let res = self.idx;
-        self.reset();
-        if let Some(idx) = res {
-            if !self.nodes[idx].end {
-                return;
+        if let Some(idx) = self.idx {
+            if self.nodes[idx].end {
+                let idx = self.nodes[idx].l;
+                self.counts[idx] += 1;
             }
-            let idx = self.nodes[idx].l;
-            self.counts[idx] += 1;
-            for c in cmd.chars() {
-                let maxi = self.counts[self.nodes[self.idx.unwrap()].max_idx];
-                if self.counts[idx] > maxi {
-                    self.nodes[self.idx.unwrap()].max_idx = idx;
-                }
-                self.search(c);
-            }
-            let maxi = self.counts[self.nodes[self.idx.unwrap()].max_idx];
-            if self.counts[idx] > maxi {
-                self.nodes[self.idx.unwrap()].max_idx = idx;
-            }
-            self.reset();
         }
+        self.reset();
     }
     fn create(
         l: usize,
@@ -97,7 +78,6 @@ impl Trie {
             l,
             r,
             end: false,
-            max_idx: l,
             children: HashMap::new(),
         });
         let mut now_id = id + 1;
@@ -135,16 +115,15 @@ impl Trie {
             };
         }
     }
-    pub fn get_max(&self) -> Option<usize> {
-        match self.idx {
-            Some(i) => Some(self.nodes[i].max_idx),
-            None => None,
-        }
-    }
     pub fn get_range(&self) -> std::ops::Range<usize> {
         match self.idx {
             Some(i) => self.nodes[i].l..self.nodes[i].r,
             None => 0..0,
         }
+    }
+    pub fn get_match_texts(&self) -> Vec<String> {
+        let mut range = self.get_range().collect::<Vec<_>>();
+        range.sort_by(|x, y| self.counts[*x].cmp(&self.counts[*y]).reverse());
+        range.iter().map(|x| self.texts[*x].clone()).collect()
     }
 }

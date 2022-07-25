@@ -172,6 +172,8 @@ impl Display {
 
                         match ch {
                             '\n' | '\r' => {
+                                self.restore_cursor();
+                                print!("\x1b[J");
                                 println2!();
                                 stdout().flush().unwrap();
                                 let cmd = self.cmd.iter().collect();
@@ -191,6 +193,8 @@ impl Display {
                                         print!("\x1b[D\x1b[J");
                                         stdout().flush().unwrap();
                                     }
+                                    let cmd = self.cmd.iter().collect();
+                                    return ReadEnum::Comp(cmd);
                                 }
                                 ESCAPE => {
                                     escape_flag = 1;
@@ -224,24 +228,45 @@ impl Display {
         stdout().flush().unwrap();
         self.suggestion = None;
     }
-    pub fn write_comp(&mut self, input: &String, comp: Vec<String>, ofs: usize) {
+    pub fn write_comp(&mut self, input: &String, comp: Vec<String>, ofs: usize, env: &Env) {
         print!("\x1b[J");
-        stdout().flush().unwrap();
-        if comp.is_empty() {
-            self.suggestion = None;
-            return;
-        }
-        let pattern = &input[ofs..];
+        // set margin
+        print!("\x1b[3B");
+        print!("\x1b[3A");
+        // clear
+        print!("\x1b[J");
+        // write data
+        print!("\x1b[1000D");
+        self.write_header(&env);
+        print!("{}", input);
+
+        // store cursor
+        print!("\x1b7");
+
+        let pattern = if comp.is_empty() { "" } else { &input[ofs..] };
         self.suggestion = if !comp.is_empty() && pattern.len() < comp[0].len() {
             let diff = comp[0].len() - pattern.len();
             let s = &comp[0][pattern.len()..];
             print!("{}", s.dimmed());
             print!("\x1b[{}D", diff);
-            stdout().flush().unwrap();
             Some(s.chars().collect())
         } else {
             None
+        };
+        println2!();
+        // reverse OFF
+        if !comp.is_empty() {
+            print!("\x1b[?7l");
+            for (i, s) in comp.iter().enumerate() {
+                if i != 0 {
+                    print!("\t");
+                }
+                print!("{}", s);
+            }
+            print!("\x1b[?7h");
         }
+        // restore cursor
+        print!("\x1b8");
+        stdout().flush().unwrap();
     }
-    pub fn clear_comp(&mut self) {}
 }

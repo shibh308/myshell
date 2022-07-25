@@ -73,16 +73,7 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
             for ch in path.chars() {
                 env.path_set.search(ch);
             }
-            let v = match env.path_set.get_max() {
-                Some(x) => vec![env.path_set.texts[x].clone()],
-                None => Vec::new(),
-            };
-            /*
-            let v = env.path_set.texts[env.path_set.get_range()]
-                .iter()
-                .cloned()
-                .collect();
-             */
+            let v = env.path_set.get_match_texts();
             env.path_set.reset();
             (fin_pos, v)
         }

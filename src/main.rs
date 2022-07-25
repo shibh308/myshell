@@ -56,8 +56,6 @@ fn main_loop() {
     loop {
         match display.get_enum(&env) {
             ReadEnum::Command(input) => {
-                display.clear_comp();
-
                 let parse_result = parser::make_parse_tree_from_str(&input, &env);
                 match match parse_result {
                     Ok(commands) => match execute::execute(commands) {
@@ -97,7 +95,8 @@ fn main_loop() {
             }
             ReadEnum::Comp(input) => {
                 let (ofs, comp_res) = complete::comp(input.clone(), &mut env);
-                display.write_comp(&input, comp_res, ofs);
+                let comp_res = comp_res.iter().take(10).cloned().collect();
+                display.write_comp(&input, comp_res, ofs, &env);
                 // display.clear();
                 // display.write_header(&env);
                 // break;
