@@ -100,6 +100,12 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
             if path.0.is_some() && path.clone().0.unwrap() == "~" {
                 return (0, Vec::new());
             }
+            if path.0.is_some() && path.clone().0.unwrap() == "." {
+                return (fin_pos, vec!["./".to_string(), "../".to_string()]);
+            }
+            if path.0.is_some() && path.clone().0.unwrap() == ".." {
+                return (fin_pos, vec!["../".to_string()]);
+            }
             if path.0.is_some()
                 && path.clone().0.unwrap().starts_with("~")
                 && !path.clone().0.unwrap().starts_with("~/")
@@ -163,7 +169,13 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
                     .then(x.1.cmp(&y.1))
                     .reverse()
             });
-            let matches = matches.iter().map(|(x, y)| x).cloned().collect();
+            let mut matches: Vec<String> = matches.iter().map(|(x, y)| x).cloned().collect();
+            if "./".starts_with(&query) {
+                matches.push("./".to_string());
+            }
+            if "../".starts_with(&query) {
+                matches.push("../".to_string());
+            }
             (fin_pos + pos - ofs_minus, matches)
         }
         CompType::Invalid => (0, Vec::new()),

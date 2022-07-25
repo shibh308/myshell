@@ -57,6 +57,11 @@ impl Display {
         self.cmd = cmd.chars().collect();
         self.cur = 0;
     }
+    pub fn scroll(&self) {
+        print!("\x1b[S");
+        print!("\x1b[A");
+        stdout().flush().unwrap();
+    }
     fn reset_cmd(&mut self) {
         let diff = self.cmd.len() - self.cur;
         if diff != 0 {

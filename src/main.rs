@@ -92,14 +92,12 @@ fn main_loop() {
                 }
                 display.clear();
                 display.write_header(&env);
+                display.scroll();
             }
             ReadEnum::Comp(input) => {
                 let (ofs, comp_res) = complete::comp(input.clone(), &mut env);
                 let comp_res = comp_res.iter().take(10).cloned().collect();
                 display.write_comp(&input, comp_res, ofs, &env);
-                // display.clear();
-                // display.write_header(&env);
-                // break;
             }
         }
     }
