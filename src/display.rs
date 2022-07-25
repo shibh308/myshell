@@ -184,8 +184,8 @@ impl Display {
                             '\t' => {
                                 self.restore_cursor();
                                 self.apply_suggestion();
-                                // let cmd = self.cmd.iter().collect();
-                                // return ReadEnum::Comp(cmd);
+                                let cmd = self.cmd.iter().collect();
+                                return ReadEnum::Comp(cmd);
                             }
                             ch if ch.is_ascii_control() => match ch {
                                 DEL => {

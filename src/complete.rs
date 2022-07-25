@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug)]
 enum CompType {
     Bin(Option<String>),
-    Path(Option<String>),
+    Path((Option<String>, bool)),
     Invalid,
 }
 
@@ -38,27 +38,45 @@ fn get_comp_type(input: &String, env: &Env) -> CompType {
     };
     let parse_result = make_parse_tree_from_tokens(check_tokens.clone(), &env);
     let res = match &parse_result {
-        Ok(stmt) if stmt.last_empty => CompType::Bin(last_token_str),
-        Ok(_) => CompType::Path(last_token_str),
+        Ok(stmt) if stmt.last_empty => CompType::Bin(last_token_str.clone()),
+        Ok(_) => CompType::Path((last_token_str.clone(), true)),
         Err(ErrorEnum::ParseError(ParseError::CommandIsEmpty(i))) if *i == check_tokens.len() => {
-            CompType::Bin(last_token_str)
+            CompType::Bin(last_token_str.clone())
         }
         Err(ErrorEnum::ParseError(ParseError::RedirectIsEmpty(i)))
             if *i == check_tokens.len() - 1 =>
         {
-            CompType::Path(last_token_str)
+            CompType::Path((last_token_str.clone(), true))
         }
         _ => CompType::Invalid,
     };
-    match res {
+    match match res {
         CompType::Bin(s)
             if s.clone().map_or(false, |x| {
                 x.starts_with('~') || x.starts_with('.') || x.starts_with('/')
             }) =>
         {
-            CompType::Path(s)
+            CompType::Path((s, true))
         }
         _ => res,
+    } {
+        CompType::Bin(bin) => CompType::Bin(bin),
+        CompType::Path((path, _)) => {
+            let access_idx = if last_token_str.map_or(0, |x| x.len()) == 0 {
+                1
+            } else {
+                2
+            };
+            if tokens.len() >= access_idx {
+                match &tokens[tokens.len() - access_idx] {
+                    Token::String(s) if s == "cd" => CompType::Path((path, false)),
+                    _ => CompType::Path((path, true)),
+                }
+            } else {
+                CompType::Path((path, true))
+            }
+        }
+        CompType::Invalid => CompType::Invalid,
     }
 }
 
@@ -78,17 +96,18 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
             (fin_pos, v)
         }
         CompType::Path(path) => {
-            let fin_pos = input.len() - path.clone().map_or(0, |x| x.len());
-            if path.is_some() && path.clone().unwrap() == "~" {
+            let fin_pos = input.len() - path.clone().0.map_or(0, |x| x.len());
+            if path.0.is_some() && path.clone().0.unwrap() == "~" {
                 return (0, Vec::new());
             }
-            if path.is_some()
-                && path.clone().unwrap().starts_with("~")
-                && !path.clone().unwrap().starts_with("~/")
+            if path.0.is_some()
+                && path.clone().0.unwrap().starts_with("~")
+                && !path.clone().0.unwrap().starts_with("~/")
             {
                 return (0, Vec::new());
             }
-            let (path, ofs_minus) = match path {
+            let file_ok = path.1;
+            let (path, ofs_minus) = match path.0 {
                 None => ("./".to_string(), 2),
                 Some(path) => match path.strip_prefix("~") {
                     Some(path) => (
@@ -114,7 +133,13 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
                             if let Ok(meta) = x.metadata() {
                                 if let Ok(accessed) = meta.accessed() {
                                     if let Some(s) = x.file_name().to_str() {
-                                        return Some((s.to_string(), accessed));
+                                        if !file_ok && !meta.is_dir() {
+                                            return None;
+                                        }
+                                        return Some((
+                                            s.to_string() + if meta.is_dir() { "/" } else { "" },
+                                            accessed,
+                                        ));
                                     }
                                 }
                             }
@@ -127,7 +152,9 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
             let mut matches = files
                 .iter()
                 .cloned()
-                .filter(|x| x.0.starts_with(&query))
+                .filter(|x| {
+                    (query.starts_with(".") || !x.0.starts_with(".")) && x.0.starts_with(&query)
+                })
                 .collect::<Vec<_>>();
             matches.sort_by(|x, y| {
                 x.0.starts_with(".")
