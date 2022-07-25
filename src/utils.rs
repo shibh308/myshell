@@ -41,6 +41,9 @@ impl Display for ErrorEnum {
             ErrorEnum::ExecutionError(ExecutionError::CdError(err)) => {
                 write!(f, "cd: {}", err.clone())
             }
+            ErrorEnum::ExecutionError(ExecutionError::HistoryError(err)) => {
+                write!(f, "history: {}", err.clone())
+            }
             ErrorEnum::ExecutionError(ExecutionError::InterruptError) => {
                 write!(f, "interrupted")
             }
@@ -99,6 +102,7 @@ fn get_path() -> Vec<String> {
     }
     res.push("cd".to_string());
     res.push("exit".to_string());
+    res.push("history".to_string());
     res
 }
 

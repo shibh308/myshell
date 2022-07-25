@@ -1,6 +1,7 @@
 use crate::lexer::*;
 use crate::parser::*;
 use crate::println2;
+use crate::utils::Env;
 use crate::utils::ErrorEnum;
 use nix::errno::Errno;
 use nix::sys::wait::{WaitPidFlag, WaitStatus};
@@ -14,6 +15,13 @@ pub enum CdError {
     #[error("missing argument")]
     MissingArgugment,
     #[error("too many argument (expected 1, found: {0})")]
+    TooManyArgument(usize),
+    #[error("{0}")]
+    ExecError(String),
+}
+#[derive(Clone, Error, Debug)]
+pub enum HistoryError {
+    #[error("too many argument (expected 0, found: {0})")]
     TooManyArgument(usize),
     #[error("{0}")]
     ExecError(String),
@@ -51,6 +59,8 @@ pub enum ExecutionError {
     StatementIsEmpty,
     #[error("cd error")]
     CdError(CdError),
+    #[error("history error")]
+    HistoryError(HistoryError),
     #[error("exit")]
     Exit,
 }
@@ -105,10 +115,25 @@ fn exec_cd(command: Command) -> Result<i32, ExecutionError> {
     }
 }
 
-fn exec_command_internal(command: Command) -> Result<i32, ExecutionError> {
+fn exec_history(command: Command, env: &Env) -> Result<i32, ExecutionError> {
+    if command.str.len() >= 2 {
+        Err(ExecutionError::HistoryError(HistoryError::TooManyArgument(
+            command.str.len() - 1,
+        )))
+    } else {
+        for (i, (status, cmd)) in env.history.iter().enumerate() {
+            println!("[{:3}][{:3}]\t{}", i, status, cmd);
+        }
+        Ok(0)
+    }
+}
+
+fn exec_command_internal(command: Command, env: &Env) -> Result<i32, ExecutionError> {
     assert!(!command.str.is_empty());
     if command.str[0] == "cd" {
         exec_cd(command)
+    } else if command.str[0] == "history" {
+        exec_history(command, env)
     } else {
         exec_and_fork(command)
     }
@@ -120,6 +145,7 @@ fn exec_command(
     output_fd: i32,
     err_fd: i32,
     is_tail: bool,
+    env: &Env,
 ) -> Result<Option<i32>, ExecutionError> {
     if command.str[0] == "exit" {
         return Err(ExecutionError::Exit);
@@ -179,7 +205,7 @@ fn exec_command(
             if err_fd != 2 {
                 close(err_fd).unwrap();
             }
-            match exec_command_internal(command) {
+            match exec_command_internal(command, &env) {
                 Ok(status) => {
                     std::process::exit(status);
                 }
@@ -193,7 +219,7 @@ fn exec_command(
     }
 }
 
-fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
+fn execute_pipe_block(pipe_block: PipeBlock, env: &Env) -> Result<i32, ExecutionError> {
     let mut input_fd = 0;
     if let Some(path) = pipe_block.from {
         let cstr = CString::new(path.clone()).unwrap();
@@ -288,27 +314,28 @@ fn execute_pipe_block(pipe_block: PipeBlock) -> Result<i32, ExecutionError> {
             output_fd,
             err_fd,
             i + 1 == command_vec.len(),
+            env,
         )?;
     }
     Ok(res.unwrap())
 }
 
-fn execute_commands(commands: Commands) -> Result<i32, ExecutionError> {
-    let head_result = execute_pipe_block(commands.head);
+fn execute_commands(commands: Commands, env: &Env) -> Result<i32, ExecutionError> {
+    let head_result = execute_pipe_block(commands.head, env);
     let success = head_result.clone().map_or(false, |x| x == 0);
     match commands.tail {
         None => head_result,
         Some((op, tail)) => match op {
             Operator::AndAnd => {
                 if success {
-                    execute_commands(*tail)
+                    execute_commands(*tail, env)
                 } else {
                     head_result
                 }
             }
             Operator::OrOr => {
                 if !success {
-                    execute_commands(*tail)
+                    execute_commands(*tail, env)
                 } else {
                     head_result
                 }
@@ -318,7 +345,7 @@ fn execute_commands(commands: Commands) -> Result<i32, ExecutionError> {
     }
 }
 
-fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError> {
+fn execute_commands_background(commands: Commands, env: &Env) -> Result<i32, ExecutionError> {
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child: _ }) => Ok(0),
         Ok(ForkResult::Child) => {
@@ -329,7 +356,7 @@ fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError
                 commands.to_string()
             );
             print!("\r");
-            match execute_commands(commands) {
+            match execute_commands(commands, env) {
                 Ok(status) => {
                     println2!();
                     println2!("process {} finished with code {}", pid, status);
@@ -347,16 +374,16 @@ fn execute_commands_background(commands: Commands) -> Result<i32, ExecutionError
     }
 }
 
-pub fn execute(stmt: Statement) -> Result<i32, ExecutionError> {
+pub fn execute(stmt: Statement, env: &Env) -> Result<i32, ExecutionError> {
     let mut res = None;
     if stmt.stmt.is_empty() {
         Err(ExecutionError::StatementIsEmpty)
     } else {
         for (b, background) in stmt.stmt {
             if background {
-                res = Some(execute_commands_background(b)?);
+                res = Some(execute_commands_background(b, &env)?);
             } else {
-                res = Some(execute_commands(b)?);
+                res = Some(execute_commands(b, &env)?);
             }
         }
         Ok(res.unwrap())

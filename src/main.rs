@@ -58,7 +58,7 @@ fn main_loop() {
             ReadEnum::Command(input) => {
                 let parse_result = parser::make_parse_tree_from_str(&input, &env);
                 match match parse_result {
-                    Ok(commands) => match execute::execute(commands) {
+                    Ok(commands) => match execute::execute(commands, &env) {
                         Ok(status) => {
                             // println!("status: {}", status);
                             ExecuteResult::Success(status)
