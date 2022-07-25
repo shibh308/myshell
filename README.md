@@ -1,5 +1,5 @@
 # myshell
-My Shell
+My shell
   
   
 # Example
