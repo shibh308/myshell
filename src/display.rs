@@ -17,7 +17,6 @@ pub struct Display {
     cmd: Vec<char>,
     cur: usize,
     history_cur: Option<usize>,
-    comp_cur: Option<usize>,
     suggestion: Option<Vec<char>>,
 }
 
@@ -27,7 +26,6 @@ impl Display {
             cmd: Vec::new(),
             cur: 0,
             history_cur: None,
-            comp_cur: None,
             suggestion: None,
         }
     }

@@ -88,6 +88,7 @@ fn main_loop() {
                     }
                     ExecuteResult::Empty => {}
                     ExecuteResult::Exit => {
+                        env.push_history(input, 0);
                         break;
                     }
                 }

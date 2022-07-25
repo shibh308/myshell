@@ -148,7 +148,7 @@ impl Env {
         let history = get_history(&history_file);
 
         let paths = get_path();
-        let path_set = Trie::new(paths);
+        let path_set = Trie::new(paths, &history);
 
         Env {
             user_name: whoami::username(),
@@ -167,6 +167,9 @@ impl Env {
         if let Some(file) = &self.history_file {
             let mut writer = BufWriter::new(file);
             writeln!(writer, "{} {}", status, cmd.clone());
+        }
+        if let Some(head) = cmd.split_ascii_whitespace().next() {
+            self.path_set.add_cnt(&head.to_string());
         }
     }
 }

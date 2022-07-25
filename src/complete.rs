@@ -73,10 +73,16 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
             for ch in path.chars() {
                 env.path_set.search(ch);
             }
+            let v = match env.path_set.get_max() {
+                Some(x) => vec![env.path_set.texts[x].clone()],
+                None => Vec::new(),
+            };
+            /*
             let v = env.path_set.texts[env.path_set.get_range()]
                 .iter()
                 .cloned()
                 .collect();
+             */
             env.path_set.reset();
             (fin_pos, v)
         }
@@ -114,28 +120,34 @@ pub fn comp(input: String, env: &mut Env) -> (usize, Vec<String>) {
                 Ok(res) => res
                     .filter_map(|x| {
                         if let Ok(x) = x {
-                            if let Some(s) = x.file_name().to_str() {
-                                Some(s.to_string())
-                            } else {
-                                None
+                            if let Ok(meta) = x.metadata() {
+                                if let Ok(accessed) = meta.accessed() {
+                                    if let Some(s) = x.file_name().to_str() {
+                                        return Some((s.to_string(), accessed));
+                                    }
+                                }
                             }
-                        } else {
-                            None
                         }
+                        None
                     })
                     .collect(),
                 Err(_) => Vec::new(),
             };
-            let matches: Vec<String> = files
+            let mut matches = files
                 .iter()
-                .filter(|x| x.starts_with(&query))
                 .cloned()
-                .collect();
+                .filter(|x| x.0.starts_with(&query))
+                .collect::<Vec<_>>();
+            matches.sort_by(|x, y| {
+                x.0.starts_with(".")
+                    .cmp(&y.0.starts_with("."))
+                    .reverse()
+                    .then(x.1.cmp(&y.1))
+                    .reverse()
+            });
+            let matches = matches.iter().map(|(x, y)| x).cloned().collect();
             (fin_pos + pos - ofs_minus, matches)
         }
-        CompType::Invalid => {
-            println2!();
-            (0, Vec::new())
-        }
+        CompType::Invalid => (0, Vec::new()),
     }
 }
